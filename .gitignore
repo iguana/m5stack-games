@@ -1,0 +1,19 @@
+# PlatformIO
+.pio/
+.vscode/
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json
+
+# Build artifacts
+*.o
+*.elf
+*.bin
+*.map
+
+# Editor files
+*~
+*.swp
+*.swo
+.DS_Store
