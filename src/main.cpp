@@ -2,12 +2,16 @@
 #include <Wire.h>
 #include "games/game1_platform.h"
 #include "games/game2_pinball.h"
+#include "games/game3_skyroads.h"
+#include "games/game4_tetris.h"
 
 enum GameState {
     SPLASH,
     MENU,
     GAME1,
-    GAME2
+    GAME2,
+    GAME3,
+    GAME4
 };
 
 GameState currentState = SPLASH;
@@ -73,7 +77,7 @@ void showMenu() {
     } else {
         M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
     }
-    M5.Lcd.setCursor(40, 90);
+    M5.Lcd.setCursor(40, 80);
     M5.Lcd.println("> Game 1: Platform");
 
     // Game 2
@@ -82,12 +86,30 @@ void showMenu() {
     } else {
         M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
     }
-    M5.Lcd.setCursor(40, 120);
+    M5.Lcd.setCursor(40, 110);
     M5.Lcd.println("> Game 2: Pinball");
+
+    // Game 3
+    if (selectedGame == 2) {
+        M5.Lcd.setTextColor(TFT_BLACK, TFT_GREEN);
+    } else {
+        M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    M5.Lcd.setCursor(40, 140);
+    M5.Lcd.println("> Game 3: Skyroads");
+
+    // Game 4
+    if (selectedGame == 3) {
+        M5.Lcd.setTextColor(TFT_BLACK, TFT_GREEN);
+    } else {
+        M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    M5.Lcd.setCursor(40, 170);
+    M5.Lcd.println("> Game 4: Tetris");
 
     M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     M5.Lcd.setTextSize(1);
-    M5.Lcd.setCursor(20, 200);
+    M5.Lcd.setCursor(20, 210);
     M5.Lcd.println("UP/DOWN: Select  A: Play");
 }
 
@@ -112,10 +134,37 @@ void loop() {
     bool facesUp = !(facesData & 0x01);
     bool facesDown = !(facesData & 0x02);
     bool facesA = !(facesData & 0x10);
+    bool facesSelect = !(facesData & 0x40);
+    bool facesStart = !(facesData & 0x80);  // Bit 7: Start button
+
+    // Power off: Hold Start button for 2 seconds
+    static unsigned long startButtonPressStart = 0;
+    static bool startButtonWasPressed = false;
+
+    if (facesStart) {
+        if (!startButtonWasPressed) {
+            startButtonPressStart = millis();
+            startButtonWasPressed = true;
+        }
+        if (millis() - startButtonPressStart > 2000) {
+            // Show shutdown message
+            M5.Lcd.fillScreen(TFT_BLACK);
+            M5.Lcd.setTextColor(TFT_RED);
+            M5.Lcd.setTextSize(3);
+            M5.Lcd.setCursor(40, 100);
+            M5.Lcd.println("POWERING OFF");
+            delay(1000);
+            // Turn off the device
+            M5.Power.deepSleep();
+        }
+    } else {
+        startButtonWasPressed = false;
+    }
 
     static bool lastUp = false;
     static bool lastDown = false;
     static bool lastA = false;
+    static bool lastSelect = false;
 
     switch (currentState) {
         case SPLASH:
@@ -131,11 +180,11 @@ void loop() {
         case MENU:
             // Navigate menu
             if (facesUp && !lastUp) {
-                selectedGame = (selectedGame - 1 + 2) % 2;
+                selectedGame = (selectedGame - 1 + 4) % 4;
                 showMenu();
             }
             if (facesDown && !lastDown) {
-                selectedGame = (selectedGame + 1) % 2;
+                selectedGame = (selectedGame + 1) % 4;
                 showMenu();
             }
 
@@ -144,17 +193,23 @@ void loop() {
                 if (selectedGame == 0) {
                     currentState = GAME1;
                     game1Setup();
-                } else {
+                } else if (selectedGame == 1) {
                     currentState = GAME2;
                     game2Setup();
+                } else if (selectedGame == 2) {
+                    currentState = GAME3;
+                    game3Setup();
+                } else {
+                    currentState = GAME4;
+                    game4Setup();
                 }
             }
             break;
 
         case GAME1:
             game1Loop();
-            // Return to menu with M5 button combo or long press
-            if (M5.BtnA.pressedFor(2000)) {
+            // Return to menu with Select button or M5 button long press
+            if ((facesSelect && !lastSelect) || M5.BtnA.pressedFor(2000)) {
                 currentState = MENU;
                 showMenu();
             }
@@ -162,8 +217,26 @@ void loop() {
 
         case GAME2:
             game2Loop();
-            // Return to menu with M5 button combo or long press
-            if (M5.BtnA.pressedFor(2000)) {
+            // Return to menu with Select button or M5 button long press
+            if ((facesSelect && !lastSelect) || M5.BtnA.pressedFor(2000)) {
+                currentState = MENU;
+                showMenu();
+            }
+            break;
+
+        case GAME3:
+            game3Loop();
+            // Return to menu with Select button or M5 button long press
+            if ((facesSelect && !lastSelect) || M5.BtnA.pressedFor(2000)) {
+                currentState = MENU;
+                showMenu();
+            }
+            break;
+
+        case GAME4:
+            game4Loop();
+            // Return to menu with Select button or M5 button long press
+            if ((facesSelect && !lastSelect) || M5.BtnA.pressedFor(2000)) {
                 currentState = MENU;
                 showMenu();
             }
@@ -173,6 +246,7 @@ void loop() {
     lastUp = facesUp;
     lastDown = facesDown;
     lastA = facesA;
+    lastSelect = facesSelect;
 
     delay(10);
 }
