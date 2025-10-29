@@ -69,6 +69,32 @@ void showMenu() {
     M5.Lcd.setCursor(60, 30);
     M5.Lcd.println("SELECT GAME");
 
+    // Battery indicator in top right corner
+    int batteryLevel = M5.Power.getBatteryLevel();
+    bool isCharging = M5.Power.isCharging();
+
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setCursor(250, 10);
+
+    if (isCharging) {
+        M5.Lcd.setTextColor(TFT_GREEN);
+        M5.Lcd.print("CHG ");
+    } else {
+        M5.Lcd.setTextColor(TFT_WHITE);
+    }
+
+    // Color code battery level
+    if (batteryLevel > 50) {
+        M5.Lcd.setTextColor(TFT_GREEN);
+    } else if (batteryLevel > 20) {
+        M5.Lcd.setTextColor(TFT_YELLOW);
+    } else {
+        M5.Lcd.setTextColor(TFT_RED);
+    }
+
+    M5.Lcd.print(batteryLevel);
+    M5.Lcd.print("%");
+
     M5.Lcd.setTextSize(2);
 
     // Game 1
