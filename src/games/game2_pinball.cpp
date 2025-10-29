@@ -18,6 +18,7 @@
 // Ball structure
 struct Ball {
     float x, y;
+    float lastX, lastY;
     float vx, vy;
     bool active;
     uint16_t color;
@@ -27,6 +28,7 @@ struct Ball {
 struct Flipper {
     float x, y;
     float angle;
+    float lastAngle;
     float targetAngle;
     bool isLeft;
     uint16_t color;
@@ -48,6 +50,7 @@ static int score = 0;
 static int lives = 3;
 static bool gameOver = false;
 static bool ballInPlay = false;
+static bool needsFullRedraw = true;
 static uint8_t facesData = 0xFF;
 static unsigned long lastBumperHit = 0;
 
@@ -61,6 +64,8 @@ static void readFacesButtons() {
 void resetBall() {
     ball.x = 300;
     ball.y = 180;
+    ball.lastX = 300;
+    ball.lastY = 180;
     ball.vx = 0;
     ball.vy = 0;
     ball.active = false;
@@ -70,8 +75,8 @@ void resetBall() {
 
 void launchBall() {
     if (!ball.active) {
-        ball.vx = -8;
-        ball.vy = -6;
+        ball.vx = -2;
+        ball.vy = -12;
         ball.active = true;
         ballInPlay = true;
     }
@@ -84,15 +89,17 @@ void setupPinball() {
     // Initialize flippers
     leftFlipper.x = 80;
     leftFlipper.y = 220;
-    leftFlipper.angle = 45;
-    leftFlipper.targetAngle = 45;
+    leftFlipper.angle = 0;      // Start horizontal/down
+    leftFlipper.lastAngle = 0;
+    leftFlipper.targetAngle = 0;
     leftFlipper.isLeft = true;
     leftFlipper.color = TFT_YELLOW;
 
     rightFlipper.x = 240;
     rightFlipper.y = 220;
-    rightFlipper.angle = 135;
-    rightFlipper.targetAngle = 135;
+    rightFlipper.angle = 180;   // Start horizontal/down
+    rightFlipper.lastAngle = 180;
+    rightFlipper.targetAngle = 180;
     rightFlipper.isLeft = false;
     rightFlipper.color = TFT_YELLOW;
 
@@ -106,6 +113,7 @@ void setupPinball() {
     score = 0;
     lives = 3;
     gameOver = false;
+    needsFullRedraw = true;
 }
 
 void drawBumper(Bumper &b) {
@@ -126,10 +134,28 @@ void drawFlipper(Flipper &f) {
     M5.Lcd.fillCircle(f.x, f.y, 4, f.color);
 }
 
+void eraseBall() {
+    if (ball.lastX != ball.x || ball.lastY != ball.y) {
+        M5.Lcd.fillCircle((int)ball.lastX, (int)ball.lastY, BALL_RADIUS + 1, TFT_DARKGREEN);
+    }
+}
+
 void drawBall() {
     if (ball.active) {
         M5.Lcd.fillCircle((int)ball.x, (int)ball.y, BALL_RADIUS, ball.color);
     }
+}
+
+void eraseFlipper(Flipper &f) {
+    int length = 40;
+    float rad = f.lastAngle * PI / 180.0;
+    int x2 = f.x + length * cos(rad);
+    int y2 = f.y - length * sin(rad);
+
+    for (int i = -3; i <= 3; i++) {
+        M5.Lcd.drawLine(f.x, f.y + i, x2, y2 + i, TFT_DARKGREEN);
+    }
+    M5.Lcd.fillCircle(f.x, f.y, 5, TFT_DARKGREEN);
 }
 
 void updateFlippers() {
@@ -137,18 +163,22 @@ void updateFlippers() {
     bool facesRight = !(facesData & 0x08);
     bool facesA = !(facesData & 0x10);
 
-    // Left flipper
+    // Save last angles
+    leftFlipper.lastAngle = leftFlipper.angle;
+    rightFlipper.lastAngle = rightFlipper.angle;
+
+    // Left flipper - starts horizontal (0°), flips UP when activated
     if (facesLeft || facesA || M5.BtnA.isPressed()) {
-        leftFlipper.targetAngle = -20;
+        leftFlipper.targetAngle = 75;   // Flip up position
     } else {
-        leftFlipper.targetAngle = 45;
+        leftFlipper.targetAngle = 0;    // Down/horizontal resting
     }
 
-    // Right flipper
+    // Right flipper - starts horizontal (180°), flips UP when activated
     if (facesRight || M5.BtnC.isPressed()) {
-        rightFlipper.targetAngle = 200;
+        rightFlipper.targetAngle = 105; // Flip up position
     } else {
-        rightFlipper.targetAngle = 135;
+        rightFlipper.targetAngle = 180; // Down/horizontal resting
     }
 
     // Smooth flipper movement
@@ -213,6 +243,10 @@ void checkFlipperCollision(Flipper &f) {
 
 void updateBall() {
     if (!ball.active) return;
+
+    // Save last position
+    ball.lastX = ball.x;
+    ball.lastY = ball.y;
 
     // Apply gravity
     ball.vy += GRAVITY;
@@ -329,8 +363,8 @@ void game2Loop() {
         M5.Lcd.println(score);
         M5.Lcd.setTextSize(1);
         M5.Lcd.setTextColor(TFT_WHITE);
-        M5.Lcd.setCursor(70, 160);
-        M5.Lcd.println("B: Play Again");
+        M5.Lcd.setCursor(50, 160);
+        M5.Lcd.println("B: Again  Select: Menu");
 
         if (facesB && !lastB) {
             setupPinball();
@@ -339,14 +373,20 @@ void game2Loop() {
         return;
     }
 
-    // Clear playfield
-    M5.Lcd.fillRect(0, 20, 320, 220, TFT_DARKGREEN);
+    // Full redraw if needed
+    if (needsFullRedraw) {
+        M5.Lcd.fillRect(0, 20, 320, 220, TFT_DARKGREEN);
+        M5.Lcd.drawRect(0, 20, 320, 220, TFT_WHITE);
+        M5.Lcd.drawRect(1, 21, 318, 218, TFT_WHITE);
 
-    // Draw boundaries
-    M5.Lcd.drawRect(0, 20, 320, 220, TFT_WHITE);
-    M5.Lcd.drawRect(1, 21, 318, 218, TFT_WHITE);
+        // Draw bumpers
+        for (int i = 0; i < 5; i++) {
+            drawBumper(bumpers[i]);
+        }
+        needsFullRedraw = false;
+    }
 
-    // Draw score and lives
+    // Draw score and lives (always update)
     M5.Lcd.fillRect(0, 0, 320, 20, TFT_BLACK);
     M5.Lcd.setTextSize(2);
     M5.Lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
@@ -357,21 +397,32 @@ void game2Loop() {
     M5.Lcd.print("Lives:");
     M5.Lcd.print(lives);
 
-    // Draw bumpers
-    for (int i = 0; i < 5; i++) {
-        drawBumper(bumpers[i]);
-    }
-
-    // Update and draw game objects
+    // Update game objects
     updateFlippers();
     updateBall();
 
+    // Erase old positions
+    eraseBall();
+    eraseFlipper(leftFlipper);
+    eraseFlipper(rightFlipper);
+
+    // Redraw bumpers if ball/flipper was near them
+    for (int i = 0; i < 5; i++) {
+        float dx = ball.lastX - bumpers[i].x;
+        float dy = ball.lastY - bumpers[i].y;
+        if (sqrt(dx*dx + dy*dy) < 20) {
+            drawBumper(bumpers[i]);
+        }
+    }
+
+    // Draw current positions
     drawFlipper(leftFlipper);
     drawFlipper(rightFlipper);
     drawBall();
 
     // Launch indicator
     if (!ballInPlay && lives > 0) {
+        M5.Lcd.fillRect(230, 185, 90, 30, TFT_DARKGREEN);
         M5.Lcd.setTextSize(1);
         M5.Lcd.setTextColor(TFT_WHITE);
         M5.Lcd.setCursor(240, 190);

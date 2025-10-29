@@ -229,4 +229,5 @@
  .pio/libdeps/m5stack-core-esp32/M5Stack/src/utility/MPU6886.h \
  .pio/libdeps/m5stack-core-esp32/M5Stack/src/utility/MahonyAHRS.h \
  .pio/libdeps/m5stack-core-esp32/M5Stack/src/utility/SH200Q.h \
- src/games/game1_platform.h src/games/game2_pinball.h
+ src/games/game1_platform.h src/games/game2_pinball.h \
+ src/games/game3_skyroads.h src/games/game4_tetris.h

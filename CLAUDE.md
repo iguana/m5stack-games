@@ -1,0 +1,2 @@
+- Use ./build.sh to build
+- Use ./deploy.sh to deploy
