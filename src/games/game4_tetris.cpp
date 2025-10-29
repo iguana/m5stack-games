@@ -85,6 +85,8 @@ static int currentRotation;
 static int currentX;
 static int currentY;
 static int nextPiece;
+static int heldPiece = -1;  // -1 means no piece held
+static bool canHold = true;  // Can only hold once per piece
 static unsigned long lastMoveTime;
 static unsigned long moveDelay;
 static int score;
@@ -93,6 +95,8 @@ static int level;
 static bool gameOver;
 static uint8_t facesData = 0xFF;
 static bool needsFullRedraw = true;
+static unsigned long lastDownPress = 0;
+static int downPressCount = 0;
 
 static void readFacesButtons() {
     Wire.requestFrom(FACES_ADDR, 1);
@@ -155,6 +159,24 @@ void drawNextPiece() {
     }
 }
 
+void drawHeldPiece() {
+    // Clear held piece area
+    M5.Lcd.fillRect(250, 100, 50, 50, TFT_BLACK);
+    M5.Lcd.drawRect(249, 99, 52, 52, TFT_WHITE);
+
+    // Draw held piece if one exists
+    if (heldPiece >= 0) {
+        for (int y = 0; y < 4; y++) {
+            for (int x = 0; x < 4; x++) {
+                if (SHAPES[heldPiece][0][y][x]) {
+                    M5.Lcd.fillRect(255 + x * 10, 105 + y * 10, 9, 9,
+                                   PIECE_COLORS[heldPiece]);
+                }
+            }
+        }
+    }
+}
+
 void drawUI() {
     M5.Lcd.setTextSize(1);
     M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -188,9 +210,14 @@ void drawUI() {
     M5.Lcd.setCursor(230, 55);
     M5.Lcd.print("DOWN:Drop");
     M5.Lcd.setCursor(230, 70);
-    M5.Lcd.print("A:Rotate");
+    M5.Lcd.print("UP:Hold");
     M5.Lcd.setCursor(230, 85);
+    M5.Lcd.print("A:Rotate");
+    M5.Lcd.setCursor(230, 100);
     M5.Lcd.print("B:Fast");
+
+    M5.Lcd.setCursor(250, 155);
+    M5.Lcd.print("HOLD:");
 }
 
 bool checkCollision(int piece, int rotation, int x, int y) {
@@ -274,10 +301,37 @@ void spawnNewPiece() {
     currentRotation = 0;
     currentX = BOARD_WIDTH / 2 - 2;
     currentY = 0;
+    canHold = true;  // Allow holding again for new piece
 
     if (checkCollision(currentPiece, currentRotation, currentX, currentY)) {
         gameOver = true;
     }
+}
+
+void holdPiece() {
+    if (!canHold) return;
+
+    canHold = false;  // Can only hold once per piece
+
+    if (heldPiece == -1) {
+        // No piece held yet, hold current and spawn next
+        heldPiece = currentPiece;
+        spawnNewPiece();
+    } else {
+        // Swap current piece with held piece
+        int temp = currentPiece;
+        currentPiece = heldPiece;
+        heldPiece = temp;
+        currentRotation = 0;
+        currentX = BOARD_WIDTH / 2 - 2;
+        currentY = 0;
+
+        if (checkCollision(currentPiece, currentRotation, currentX, currentY)) {
+            gameOver = true;
+        }
+    }
+
+    drawHeldPiece();
 }
 
 static void resetGame() {
@@ -294,6 +348,10 @@ static void resetGame() {
     moveDelay = 500;
     gameOver = false;
     needsFullRedraw = true;
+    heldPiece = -1;
+    canHold = true;
+    downPressCount = 0;
+    lastDownPress = 0;
 
     currentPiece = random(7);
     nextPiece = random(7);
@@ -348,6 +406,7 @@ void game4Loop() {
         M5.Lcd.fillScreen(TFT_BLACK);
         drawUI();
         drawNextPiece();
+        drawHeldPiece();
         drawBoard();
         needsFullRedraw = false;
     }
@@ -358,12 +417,14 @@ void game4Loop() {
     bool facesLeft = !(facesData & 0x04);
     bool facesRight = !(facesData & 0x08);
     bool facesDown = !(facesData & 0x02);
+    bool facesUp = !(facesData & 0x01);
     bool facesA = !(facesData & 0x10);
     bool facesB = !(facesData & 0x20);
 
     static bool lastLeft = false;
     static bool lastRight = false;
     static bool lastDown = false;
+    static bool lastUp = false;
     static bool lastA = false;
     static bool lastB = false;
 
@@ -400,6 +461,12 @@ void game4Loop() {
         }
     }
 
+    // Hold piece with UP button
+    if (facesUp && !lastUp) {
+        holdPiece();
+        needsFullRedraw = true;  // Force redraw to show held piece
+    }
+
     // Rotate
     if (facesA && !lastA) {
         int newRotation = (currentRotation + 1) % 4;
@@ -411,9 +478,28 @@ void game4Loop() {
     // Fast drop with B button
     unsigned long currentDelay = (facesB) ? 50 : moveDelay;
 
-    // Manual drop
+    // Manual drop and triple-down detection
     if (facesDown && !lastDown) {
-        if (!checkCollision(currentPiece, currentRotation, currentX, currentY + 1)) {
+        unsigned long currentTime = millis();
+
+        // Check for triple down press (3 presses within 500ms)
+        if (currentTime - lastDownPress < 500) {
+            downPressCount++;
+            if (downPressCount >= 2) {  // Third press (0, 1, 2)
+                // Hard drop - drop piece all the way down
+                while (!checkCollision(currentPiece, currentRotation, currentX, currentY + 1)) {
+                    currentY++;
+                    score += 2;  // More points for hard drop
+                }
+                downPressCount = 0;
+            }
+        } else {
+            downPressCount = 0;
+        }
+        lastDownPress = currentTime;
+
+        // Regular manual drop
+        if (downPressCount < 2 && !checkCollision(currentPiece, currentRotation, currentX, currentY + 1)) {
             currentY++;
             score += 1;
         }
@@ -459,6 +545,7 @@ void game4Loop() {
     lastLeft = facesLeft;
     lastRight = facesRight;
     lastDown = facesDown;
+    lastUp = facesUp;
     lastA = facesA;
     lastB = facesB;
 
